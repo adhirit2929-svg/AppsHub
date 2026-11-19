@@ -1,0 +1,485 @@
+{
+  "entities": {
+    "UserPublicProfile": {
+      "title": "UserPublicProfile",
+      "description": "Root public-safe profile document for a Firebase-authenticated user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the user."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Display name shown in cloud sync status."
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Optional profile avatar URL."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-updated timestamp."
+        }
+      },
+      "required": ["ownerId", "displayName", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Isolated PII document storing the authenticated user's verified email.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the user."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 200,
+          "description": "Verified account email address."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "email", "createdAt", "updatedAt"]
+    },
+    "OnlineHubAccount": {
+      "title": "OnlineHubAccount",
+      "description": "An online account profile inside My Apps Hub synced to Firestore.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "accountKey": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "avatar": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "accountType": {
+          "type": "string",
+          "enum": ["online"]
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["light", "dark"]
+        },
+        "agentDataPerm": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "accountKey", "username", "displayName", "accountType", "createdAt", "updatedAt"]
+    },
+    "OnlineDataBucket": {
+      "title": "OnlineDataBucket",
+      "description": "Structured per-feature data bucket (customApps, notes, stocks, meditation, shortcuts, appPrivacy, calculator, nutritrack) for an OnlineHubAccount.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "accountKey": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "bucketName": {
+          "type": "string",
+          "enum": ["customApps", "notes", "stocks", "meditation", "shortcuts", "appPrivacy", "calculator", "nutritrack"]
+        },
+        "items": {
+          "type": "array",
+          "description": "Bounded array of native map items (max 200)."
+        },
+        "settings": {
+          "type": "object",
+          "description": "Native key-value settings map for object-shaped buckets."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "accountKey", "bucketName", "createdAt", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Authoritative RBAC document granting Admin privileges to a Firebase UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "usernameKey": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "grantedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "usernameKey", "username", "grantedBy", "createdAt", "updatedAt"]
+    },
+    "AdminInvite": {
+      "title": "AdminInvite",
+      "description": "Pre-approved admin invitation created by an existing admin for a co-builder's username.",
+      "type": "object",
+      "properties": {
+        "usernameKey": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "targetUsername": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "invitedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["usernameKey", "targetUsername", "invitedByUid", "createdAt", "updatedAt"]
+    },
+    "OnlineProfile": {
+      "title": "OnlineProfile",
+      "description": "Non-PII public username directory profile enabling friend lookup by username.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "usernameKey": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "avatar": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "admin"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "usernameKey", "username", "displayName", "role", "createdAt", "updatedAt"]
+    },
+    "Friendship": {
+      "title": "Friendship",
+      "description": "Bidirectional friend request and accepted friendship keyed by sorted userA__userB.",
+      "type": "object",
+      "properties": {
+        "pairId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "participants": {
+          "type": "array",
+          "description": "Bounded 2-element sorted array of Firebase UIDs [userA, userB]."
+        },
+        "requesterId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "accepted"]
+        },
+        "profiles": {
+          "type": "object",
+          "description": "Map keyed by UID containing { username, usernameKey, displayName, avatar, role }."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["pairId", "participants", "requesterId", "status", "profiles", "createdAt", "updatedAt"]
+    },
+    "ChatThread": {
+      "title": "ChatThread",
+      "description": "Direct message thread between two accepted friends keyed by sorted userA__userB.",
+      "type": "object",
+      "properties": {
+        "chatId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "participants": {
+          "type": "array",
+          "description": "Bounded 2-element sorted array of Firebase UIDs [userA, userB]."
+        },
+        "profiles": {
+          "type": "object",
+          "description": "Map keyed by UID containing { username, usernameKey, displayName, avatar, role }."
+        },
+        "lastMessageText": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "lastMessageSenderId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "lastMessageAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["chatId", "participants", "profiles", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Immutable direct message document inside a ChatThread.",
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "chatId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "participants": {
+          "type": "array",
+          "description": "Bounded 2-element sorted array of Firebase UIDs matching parent ChatThread."
+        },
+        "senderId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderUsername": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "senderDisplayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["messageId", "chatId", "participants", "senderId", "senderUsername", "senderDisplayName", "text", "createdAt"]
+    },
+    "SystemAnnouncement": {
+      "title": "SystemAnnouncement",
+      "description": "Admin-managed global announcement banner shown to online users.",
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["message", "updatedBy", "active", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublicProfile" },
+      "description": "Root user profile owned by request.auth.uid."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Isolated PII subcollection (email) readable/writable only by owner."
+    },
+    "/users/{userId}/hubAccounts/{accountKey}": {
+      "schema": { "$ref": "#/entities/OnlineHubAccount" },
+      "description": "Synced online accounts belonging to the authenticated Firebase user."
+    },
+    "/users/{userId}/hubAccounts/{accountKey}/buckets/{bucketName}": {
+      "schema": { "$ref": "#/entities/OnlineDataBucket" },
+      "description": "Synced data buckets (customApps, notes, stocks, meditation, shortcuts, appPrivacy, calculator, nutritrack) per online account."
+    },
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Authoritative admin registry."
+    },
+    "/adminInvites/{usernameKey}": {
+      "schema": { "$ref": "#/entities/AdminInvite" },
+      "description": "Pre-approved admin invites keyed by normalized lowercase username."
+    },
+    "/onlineProfiles/{usernameKey}": {
+      "schema": { "$ref": "#/entities/OnlineProfile" },
+      "description": "Non-PII public username directory for Online Accounts and Friend lookup."
+    },
+    "/friendships/{pairId}": {
+      "schema": { "$ref": "#/entities/Friendship" },
+      "description": "Friend requests and accepted friendships between Online Accounts."
+    },
+    "/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/ChatThread" },
+      "description": "Direct message thread metadata between two friends."
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Immutable chat messages within a thread."
+    },
+    "/systemConfig/{docId}": {
+      "schema": { "$ref": "#/entities/SystemAnnouncement" },
+      "description": "Admin-managed system announcement configuration."
+    }
+  }
+}
