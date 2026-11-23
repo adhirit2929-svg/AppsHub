@@ -112,6 +112,59 @@ export interface ChatMessageDTO {
   createdAtMs: number;
 }
 
+export interface OnlineAppDTO {
+  appId: string;
+  name: string;
+  description: string;
+  icon: string;
+  authorUid: string;
+  authorUsername: string;
+  authorUsernameKey: string;
+  authorDisplayName: string;
+  sourceMode: 'html' | 'bundle';
+  code: string;
+  htmlCode: string;
+  cssCode: string;
+  jsCode: string;
+  status: 'pending' | 'approved' | 'rejected' | 'disabled';
+  version: number;
+  adminNote: string;
+  reviewedByUid: string;
+  hasPendingUpdate: boolean;
+  pendingUpdate: Record<string, unknown>;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface SubmitOnlineAppInput {
+  name: string;
+  description?: string;
+  icon?: string;
+  sourceMode: 'html' | 'bundle';
+  code?: string;
+  htmlCode?: string;
+  cssCode?: string;
+  jsCode?: string;
+}
+
+export interface ReviewOnlineAppInput {
+  appId: string;
+  status: 'approved' | 'rejected' | 'disabled';
+  adminNote?: string;
+}
+
+export interface UpdateOnlineAppInput {
+  appId: string;
+  name?: string;
+  description?: string;
+  icon?: string;
+  sourceMode?: 'html' | 'bundle';
+  code?: string;
+  htmlCode?: string;
+  cssCode?: string;
+  jsCode?: string;
+}
+
 export interface AdminDashboardDTO {
   isAdmin: boolean;
   isBootstrapped: boolean;

@@ -15,20 +15,30 @@ import {
   addFriendByUsernameInSupabase,
   checkSupabaseTablesReady,
   deleteOnlineAccountFromSupabase,
+  fetchAccountModerationStatus,
   fetchAccountRoleFromSupabase,
   fetchAdminDirectoryFromSupabase,
   fetchChatMessagesFromSupabase,
   fetchChatsFromSupabase,
   fetchFriendshipsFromSupabase,
+  fetchOnlineAppById,
+  fetchOnlineApps,
   loginOnlineAccountFromSupabase,
   registerOnlineAccountInSupabase,
   removeFriendshipInSupabase,
+  reviewOnlineApp,
   sendMessageInSupabase,
+  setAccountModeration,
   setAccountRoleInSupabase,
+  submitOnlineApp,
+  subscribeOnlineApps,
   subscribeUserSocialRealtime,
   syncOnlineAccountToSupabase,
   syncSingleBucketToSupabase,
+  updateOnlineApp,
+  deleteOnlineApp,
 } from './supabaseSync';
+import type { OnlineAppDTO } from './firebaseSync';
 
 interface CloudBridgeMessage {
   type: string;

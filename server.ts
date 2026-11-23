@@ -130,6 +130,14 @@ async function startServer() {
     }
   });
 
+  // Supabase client config for the frontend (public URL + anon key only)
+  app.get("/api/supabase-config", async (_req: Request, res: Response) => {
+    res.json({
+      url: process.env.VITE_SUPABASE_URL || "https://lqzdochhwqqghekobjdu.supabase.co",
+      key: process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_iP83PhH0tl8yrs2W3GcEwQ_MSgALnXY",
+    });
+  });
+
   // Streaming & non-streaming AI chat proxy (eliminates browser CORS preflight & network stalls)
   app.post("/api/ai/chat", async (req: Request, res: Response) => {
     const provider = normalizeProvider(req.body?.provider);

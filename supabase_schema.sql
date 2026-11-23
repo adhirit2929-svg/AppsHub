@@ -111,3 +111,13 @@ begin
     alter publication supabase_realtime add table public.hub_messages;
   end if;
 exception when others then null; end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'hub_online_apps'
+  ) then
+    alter publication supabase_realtime add table public.hub_online_apps;
+  end if;
+exception when others then null; end $$;

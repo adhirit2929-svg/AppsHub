@@ -8,7 +8,11 @@ import type {
   FriendshipDTO,
   HubAccountMeta,
   LoadedCloudAccount,
+  OnlineAppDTO,
   ParticipantMiniProfile,
+  SubmitOnlineAppInput,
+  ReviewOnlineAppInput,
+  UpdateOnlineAppInput,
 } from './firebaseSync';
 import { makeSortedPair, toSafeAccountKey, VALID_BUCKETS } from './firebaseSync';
 
@@ -663,6 +667,381 @@ export function subscribeUserSocialRealtime(
     )
     .subscribe();
 
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}
+
+/* ---------- Account Moderation (Supabase) ---------- */
+
+interface HubAccountModerationRow {
+  username_key: string;
+  username: string;
+  role: 'user' | 'admin';
+  moderation_status: 'active' | 'suspended' | 'banned';
+  ban_message: string;
+  suspended_until_ms: number;
+}
+
+export async function fetchAccountModerationStatus(usernameKey: string): Promise<{
+  moderationStatus: 'active' | 'suspended' | 'banned';
+  banMessage: string;
+  suspendedUntilMs: number;
+  isSuspended: boolean;
+  isBanned: boolean;
+  role: 'user' | 'admin';
+}> {
+  const { data, error } = await supabase
+    .from('hub_accounts')
+    .select('username_key, username, role, moderation_status, ban_message, suspended_until_ms')
+    .eq('username_key', usernameKey)
+    .maybeSingle<HubAccountModerationRow>();
+  if (error) {
+    if (isMissingTableError(error)) {
+      return { moderationStatus: 'active', banMessage: '', suspendedUntilMs: 0, isSuspended: false, isBanned: false, role: 'user' };
+    }
+    throw new Error(error.message);
+  }
+  if (!data) {
+    return { moderationStatus: 'active', banMessage: '', suspendedUntilMs: 0, isSuspended: false, isBanned: false, role: 'user' };
+  }
+  const status = data.moderation_status === 'suspended' || data.moderation_status === 'banned' ? data.moderation_status : 'active';
+  const now = Date.now();
+  const isSuspended = status === 'suspended' && data.suspended_until_ms > now;
+  const isBanned = status === 'banned';
+  return {
+    moderationStatus: status,
+    banMessage: data.ban_message || '',
+    suspendedUntilMs: data.suspended_until_ms || 0,
+    isSuspended,
+    isBanned,
+    role: data.role === 'admin' ? 'admin' : 'user',
+  };
+}
+
+export async function setAccountModeration(
+  callerKey: string,
+  targetUsernameKey: string,
+  moderationStatus: 'active' | 'suspended' | 'banned',
+  banMessage?: string,
+  suspendedUntilMs?: number
+): Promise<{ ok: boolean; targetUsername: string; moderationStatus: 'active' | 'suspended' | 'banned'; error?: string }> {
+  const callerRole = await fetchAccountRoleFromSupabase(callerKey);
+  if (callerRole !== 'admin') {
+    return { ok: false, targetUsername: '', moderationStatus: 'active', error: 'Admin access required.' };
+  }
+  const { data: targetRow, error: readErr } = await supabase
+    .from('hub_accounts')
+    .select('username_key, username, moderation_status')
+    .eq('username_key', targetUsernameKey)
+    .maybeSingle<Pick<HubAccountModerationRow, 'username_key' | 'username' | 'moderation_status'>>();
+  if (readErr) throw new Error(readErr.message);
+  if (!targetRow) {
+    return { ok: false, targetUsername: '', moderationStatus: 'active', error: 'No account found.' };
+  }
+  const updateData: Record<string, unknown> = {
+    moderation_status: moderationStatus,
+    updated_at: new Date().toISOString(),
+  };
+  if (moderationStatus === 'banned') {
+    updateData.ban_message = String(banMessage || 'Account banned.');
+    updateData.suspended_until_ms = 0;
+  } else if (moderationStatus === 'suspended') {
+    updateData.ban_message = String(banMessage || 'Account suspended.');
+    updateData.suspended_until_ms = suspendedUntilMs ? Number(suspendedUntilMs) : Date.now() + 24 * 60 * 60 * 1000;
+  } else {
+    updateData.ban_message = '';
+    updateData.suspended_until_ms = 0;
+  }
+  const { error: updErr } = await supabase
+    .from('hub_accounts')
+    .update(updateData)
+    .eq('username_key', targetUsernameKey);
+  if (updErr) throw new Error(updErr.message);
+  return { ok: true, targetUsername: targetRow.username, moderationStatus };
+}
+
+/* ---------- Online Apps Store (Supabase) ---------- */
+
+interface HubOnlineAppRow {
+  app_id: string;
+  name: string;
+  description: string;
+  icon: string;
+  author_uid: string;
+  author_username: string;
+  author_username_key: string;
+  author_display_name: string;
+  source_mode: 'html' | 'bundle';
+  code: string;
+  html_code: string;
+  css_code: string;
+  js_code: string;
+  status: 'pending' | 'approved' | 'rejected' | 'disabled';
+  version: number;
+  admin_note: string;
+  reviewed_by_uid: string;
+  has_pending_update: boolean;
+  pending_update: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapOnlineAppRow(row: HubOnlineAppRow): OnlineAppDTO {
+  return {
+    appId: row.app_id,
+    name: row.name,
+    description: row.description,
+    icon: row.icon,
+    authorUid: row.author_uid,
+    authorUsername: row.author_username,
+    authorUsernameKey: row.author_username_key,
+    authorDisplayName: row.author_display_name,
+    sourceMode: row.source_mode,
+    code: row.code,
+    htmlCode: row.html_code,
+    cssCode: row.css_code,
+    jsCode: row.js_code,
+    status: row.status,
+    version: row.version,
+    adminNote: row.admin_note,
+    reviewedByUid: row.reviewed_by_uid,
+    hasPendingUpdate: row.has_pending_update,
+    pendingUpdate: row.pending_update || {},
+    createdAtMs: toMs(row.created_at),
+    updatedAtMs: toMs(row.updated_at),
+  };
+}
+
+export async function submitOnlineApp(
+  account: HubAccountMeta,
+  input: SubmitOnlineAppInput
+): Promise<{ ok: boolean; app?: OnlineAppDTO; error?: string }> {
+  const usernameKey = toSafeAccountKey(account.username);
+  const appId = `app_${usernameKey}_${Date.now().toString(36)}`;
+  const cleanName = String(input.name || '').trim().slice(0, 80);
+  const cleanDesc = String(input.description || '').slice(0, 500);
+  const cleanIcon = String(input.icon || '').slice(0, 500);
+  const sourceMode = input.sourceMode === 'bundle' ? 'bundle' : 'html';
+  const cleanCode = String(input.code || '').slice(0, 100000);
+  const cleanHtml = String(input.htmlCode || '').slice(0, 100000);
+  const cleanCss = String(input.cssCode || '').slice(0, 50000);
+  const cleanJs = String(input.jsCode || '').slice(0, 50000);
+  const now = new Date().toISOString();
+
+  const { error } = await supabase.from('hub_online_apps').insert({
+    app_id: appId,
+    name: cleanName,
+    description: cleanDesc,
+    icon: cleanIcon,
+    author_uid: usernameKey,
+    author_username: account.username || usernameKey,
+    author_username_key: usernameKey,
+    author_display_name: account.displayName || account.username || usernameKey,
+    source_mode: sourceMode,
+    code: cleanCode,
+    html_code: cleanHtml,
+    css_code: cleanCss,
+    js_code: cleanJs,
+    status: 'pending',
+    version: 1,
+    admin_note: '',
+    reviewed_by_uid: '',
+    has_pending_update: false,
+    pending_update: {},
+    created_at: now,
+    updated_at: now,
+  });
+  if (error) {
+    if (isMissingTableError(error)) return { ok: false, error: 'Online Apps table not initialized. Run the setup SQL first.' };
+    return { ok: false, error: error.message };
+  }
+  const app: OnlineAppDTO = {
+    appId,
+    name: cleanName,
+    description: cleanDesc,
+    icon: cleanIcon,
+    authorUid: usernameKey,
+    authorUsername: account.username || usernameKey,
+    authorUsernameKey: usernameKey,
+    authorDisplayName: account.displayName || account.username || usernameKey,
+    sourceMode,
+    code: cleanCode,
+    htmlCode: cleanHtml,
+    cssCode: cleanCss,
+    jsCode: cleanJs,
+    status: 'pending',
+    version: 1,
+    adminNote: '',
+    reviewedByUid: '',
+    hasPendingUpdate: false,
+    pendingUpdate: {},
+    createdAtMs: Date.now(),
+    updatedAtMs: Date.now(),
+  };
+  return { ok: true, app };
+}
+
+export async function fetchOnlineApps(statusFilter?: 'pending' | 'approved' | 'rejected' | 'disabled'): Promise<{
+  ok: boolean;
+  apps: OnlineAppDTO[];
+  error?: string;
+}> {
+  let query = supabase.from('hub_online_apps').select('*').order('created_at', { ascending: false });
+  if (statusFilter) {
+    query = query.eq('status', statusFilter);
+  }
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingTableError(error)) return { ok: false, apps: [], error: 'Online Apps table not initialized.' };
+    return { ok: false, apps: [], error: error.message };
+  }
+  const apps = ((data as HubOnlineAppRow[] | null) || []).map(mapOnlineAppRow);
+  return { ok: true, apps };
+}
+
+export async function fetchOnlineAppById(appId: string): Promise<{
+  ok: boolean;
+  app?: OnlineAppDTO;
+  error?: string;
+}> {
+  const { data, error } = await supabase
+    .from('hub_online_apps')
+    .select('*')
+    .eq('app_id', appId)
+    .maybeSingle<HubOnlineAppRow>();
+  if (error) {
+    if (isMissingTableError(error)) return { ok: false, error: 'Online Apps table not initialized.' };
+    return { ok: false, error: error.message };
+  }
+  if (!data) return { ok: false, error: 'App not found.' };
+  return { ok: true, app: mapOnlineAppRow(data) };
+}
+
+export async function reviewOnlineApp(
+  callerKey: string,
+  input: ReviewOnlineAppInput
+): Promise<{ ok: boolean; app?: OnlineAppDTO; error?: string }> {
+  const callerRole = await fetchAccountRoleFromSupabase(callerKey);
+  if (callerRole !== 'admin') {
+    return { ok: false, error: 'Admin access required.' };
+  }
+  const { data: existing, error: readErr } = await supabase
+    .from('hub_online_apps')
+    .select('*')
+    .eq('app_id', input.appId)
+    .maybeSingle<HubOnlineAppRow>();
+  if (readErr) throw new Error(readErr.message);
+  if (!existing) {
+    return { ok: false, error: 'App not found.' };
+  }
+  const updateData: Record<string, unknown> = {
+    status: input.status,
+    admin_note: String(input.adminNote || ''),
+    reviewed_by_uid: callerKey,
+    updated_at: new Date().toISOString(),
+  };
+  if (input.status === 'approved') {
+    updateData.has_pending_update = false;
+    updateData.pending_update = {};
+  }
+  const { error: updErr } = await supabase
+    .from('hub_online_apps')
+    .update(updateData)
+    .eq('app_id', input.appId);
+  if (updErr) throw new Error(updErr.message);
+  const { data: updated } = await supabase
+    .from('hub_online_apps')
+    .select('*')
+    .eq('app_id', input.appId)
+    .maybeSingle<HubOnlineAppRow>();
+  return { ok: true, app: updated ? mapOnlineAppRow(updated) : undefined };
+}
+
+export async function updateOnlineApp(
+  account: HubAccountMeta,
+  input: UpdateOnlineAppInput
+): Promise<{ ok: boolean; app?: OnlineAppDTO; error?: string }> {
+  const usernameKey = toSafeAccountKey(account.username);
+  const { data: existing, error: readErr } = await supabase
+    .from('hub_online_apps')
+    .select('*')
+    .eq('app_id', input.appId)
+    .maybeSingle<HubOnlineAppRow>();
+  if (readErr) throw new Error(readErr.message);
+  if (!existing) {
+    return { ok: false, error: 'App not found.' };
+  }
+  if (existing.author_username_key !== usernameKey) {
+    return { ok: false, error: 'You do not own this app.' };
+  }
+  const updateData: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+    version: (existing.version || 1) + 1,
+    has_pending_update: true,
+    pending_update: {},
+  };
+  if (input.name !== undefined) updateData.name = String(input.name).slice(0, 80);
+  if (input.description !== undefined) updateData.description = String(input.description).slice(0, 500);
+  if (input.icon !== undefined) updateData.icon = String(input.icon).slice(0, 500);
+  if (input.sourceMode !== undefined) updateData.source_mode = input.sourceMode;
+  if (input.code !== undefined) updateData.code = String(input.code).slice(0, 100000);
+  if (input.htmlCode !== undefined) updateData.html_code = String(input.htmlCode).slice(0, 100000);
+  if (input.cssCode !== undefined) updateData.css_code = String(input.cssCode).slice(0, 50000);
+  if (input.jsCode !== undefined) updateData.js_code = String(input.jsCode).slice(0, 50000);
+  const { error: updErr } = await supabase
+    .from('hub_online_apps')
+    .update(updateData)
+    .eq('app_id', input.appId);
+  if (updErr) throw new Error(updErr.message);
+  const { data: updated } = await supabase
+    .from('hub_online_apps')
+    .select('*')
+    .eq('app_id', input.appId)
+    .maybeSingle<HubOnlineAppRow>();
+  return { ok: true, app: updated ? mapOnlineAppRow(updated) : undefined };
+}
+
+export async function deleteOnlineApp(
+  account: HubAccountMeta,
+  appId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const usernameKey = toSafeAccountKey(account.username);
+  const { data: existing, error: readErr } = await supabase
+    .from('hub_online_apps')
+    .select('app_id, author_username_key, status')
+    .eq('app_id', appId)
+    .maybeSingle<Pick<HubOnlineAppRow, 'app_id' | 'author_username_key' | 'status'>>();
+  if (readErr) throw new Error(readErr.message);
+  if (!existing) {
+    return { ok: false, error: 'App not found.' };
+  }
+  if (existing.author_username_key !== usernameKey) {
+    return { ok: false, error: 'You do not own this app.' };
+  }
+  const callerRole = await fetchAccountRoleFromSupabase(usernameKey);
+  if (existing.status === 'approved' && callerRole !== 'admin') {
+    return { ok: false, error: 'Approved apps can only be deleted by an admin.' };
+  }
+  const { error } = await supabase.from('hub_online_apps').delete().eq('app_id', appId);
+  if (error) throw new Error(error.message);
+  return { ok: true };
+}
+
+export function subscribeOnlineApps(
+  onUpdate: (apps: OnlineAppDTO[]) => void
+): () => void {
+  const channel = supabase
+    .channel(`hub_online_apps_${Date.now()}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'hub_online_apps' },
+      async () => {
+        const res = await fetchOnlineApps();
+        if (res.ok) onUpdate(res.apps);
+      }
+    )
+    .subscribe();
   return () => {
     void supabase.removeChannel(channel);
   };
