@@ -9,7 +9,7 @@ import {
   type CloudBucketPayload,
   type HubAccountMeta,
   toSafeAccountKey,
-} from './firebaseSync';
+} from './supabaseSync';
 import {
   acceptFriendRequestInSupabase,
   addFriendByUsernameInSupabase,
@@ -38,7 +38,7 @@ import {
   updateOnlineApp,
   deleteOnlineApp,
 } from './supabaseSync';
-import type { OnlineAppDTO } from './firebaseSync';
+import type { OnlineAppDTO } from './supabaseSync';
 
 interface CloudBridgeMessage {
   type: string;

@@ -1,20 +1,153 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
-import type {
-  BucketName,
-  ChatMessageDTO,
-  ChatThreadDTO,
-  CloudBucketPayload,
-  FriendshipDTO,
-  HubAccountMeta,
-  LoadedCloudAccount,
-  OnlineAppDTO,
-  ParticipantMiniProfile,
-  SubmitOnlineAppInput,
-  ReviewOnlineAppInput,
-  UpdateOnlineAppInput,
-} from './firebaseSync';
-import { makeSortedPair, toSafeAccountKey, VALID_BUCKETS } from './firebaseSync';
+
+export const VALID_BUCKETS = [
+  'customApps',
+  'notes',
+  'stocks',
+  'meditation',
+  'shortcuts',
+  'appPrivacy',
+  'calculator',
+  'nutritrack',
+] as const;
+
+export type BucketName = (typeof VALID_BUCKETS)[number];
+
+export interface CloudBucketPayload {
+  items?: Record<string, unknown>[];
+  settings?: Record<string, unknown>;
+}
+
+export interface HubAccountMeta {
+  username: string;
+  displayName?: string;
+  avatar?: string;
+  accountType?: string;
+  theme?: string;
+  agentDataPerm?: boolean;
+}
+
+export interface ParticipantMiniProfile {
+  username: string;
+  usernameKey: string;
+  displayName: string;
+  avatar: string;
+  role: 'user' | 'admin';
+}
+
+export interface FriendshipDTO {
+  pairId: string;
+  participants: string[];
+  requesterId: string;
+  status: 'pending' | 'accepted';
+  profiles: Record<string, ParticipantMiniProfile>;
+  updatedAtMs: number;
+}
+
+export interface ChatThreadDTO {
+  chatId: string;
+  participants: string[];
+  profiles: Record<string, ParticipantMiniProfile>;
+  lastMessageText: string;
+  lastMessageSenderId: string;
+  lastMessageAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface ChatMessageDTO {
+  messageId: string;
+  chatId: string;
+  participants: string[];
+  senderId: string;
+  senderUsername: string;
+  senderDisplayName: string;
+  text: string;
+  createdAtMs: number;
+}
+
+export interface LoadedCloudAccount {
+  accountKey: string;
+  username: string;
+  displayName: string;
+  avatar: string;
+  accountType: 'online';
+  role?: 'user' | 'admin';
+  theme: 'light' | 'dark';
+  agentDataPerm: boolean;
+  buckets: Partial<Record<BucketName, CloudBucketPayload>>;
+}
+
+export interface OnlineAppDTO {
+  appId: string;
+  name: string;
+  description: string;
+  icon: string;
+  authorUid: string;
+  authorUsername: string;
+  authorUsernameKey: string;
+  authorDisplayName: string;
+  sourceMode: 'html' | 'bundle';
+  code: string;
+  htmlCode: string;
+  cssCode: string;
+  jsCode: string;
+  status: 'pending' | 'approved' | 'rejected' | 'disabled';
+  version: number;
+  adminNote: string;
+  reviewedByUid: string;
+  hasPendingUpdate: boolean;
+  pendingUpdate: Record<string, unknown>;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface SubmitOnlineAppInput {
+  name: string;
+  description?: string;
+  icon?: string;
+  sourceMode: 'html' | 'bundle';
+  code?: string;
+  htmlCode?: string;
+  cssCode?: string;
+  jsCode?: string;
+}
+
+export interface ReviewOnlineAppInput {
+  appId: string;
+  status: 'approved' | 'rejected' | 'disabled';
+  adminNote?: string;
+}
+
+export interface UpdateOnlineAppInput {
+  appId: string;
+  name?: string;
+  description?: string;
+  icon?: string;
+  sourceMode?: 'html' | 'bundle';
+  code?: string;
+  htmlCode?: string;
+  cssCode?: string;
+  jsCode?: string;
+}
+
+export function toSafeAccountKey(username: string): string {
+  const cleaned = String(username || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+  if (cleaned.length >= 2) return cleaned;
+  return ('acc_' + cleaned).slice(0, 40);
+}
+
+export function makeSortedPair(uid1: string, uid2: string): { pairId: string; participants: [string, string] } {
+  const participants: [string, string] = uid1 < uid2 ? [uid1, uid2] : [uid2, uid1];
+  return {
+    pairId: `${participants[0]}__${participants[1]}`,
+    participants,
+  };
+}
 
 export interface SupabaseSchemaStatus {
   tablesReady: boolean;
