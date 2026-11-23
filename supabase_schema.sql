@@ -56,5 +56,22 @@ create policy "hub_messages_open" on public.hub_messages
   for all to anon, authenticated using (true) with check (true);
 
 -- Enable real-time updates for contacts and chat messages
-alter publication supabase_realtime add table public.hub_friendships;
-alter publication supabase_realtime add table public.hub_messages;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'hub_friendships'
+  ) then
+    alter publication supabase_realtime add table public.hub_friendships;
+  end if;
+exception when others then null; end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'hub_messages'
+  ) then
+    alter publication supabase_realtime add table public.hub_messages;
+  end if;
+exception when others then null; end $$;
