@@ -9,6 +9,9 @@ create table if not exists public.hub_accounts (
   role text not null default 'user' check (role in ('user', 'admin')),
   theme text not null default 'light' check (theme in ('light', 'dark')),
   agent_data_perm boolean not null default true,
+  moderation_status text not null default 'active' check (moderation_status in ('active', 'suspended', 'banned')),
+  ban_message text not null default '',
+  suspended_until_ms bigint not null default 0,
   buckets jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -38,6 +41,39 @@ create table if not exists public.hub_messages (
 
 create index if not exists idx_hub_friendships_users on public.hub_friendships (user_a, user_b);
 create index if not exists idx_hub_messages_chat_created on public.hub_messages (chat_id, created_at);
+
+create table if not exists public.hub_online_apps (
+  app_id text primary key,
+  name text not null,
+  description text not null default '',
+  icon text not null default '',
+  author_uid text not null,
+  author_username text not null default '',
+  author_username_key text not null default '',
+  author_display_name text not null default '',
+  source_mode text not null default 'html' check (source_mode in ('html', 'bundle')),
+  code text not null default '',
+  html_code text not null default '',
+  css_code text not null default '',
+  js_code text not null default '',
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'disabled')),
+  version integer not null default 1,
+  admin_note text not null default '',
+  reviewed_by_uid text not null default '',
+  has_pending_update boolean not null default false,
+  pending_update jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_hub_online_apps_author on public.hub_online_apps (author_uid);
+create index if not exists idx_hub_online_apps_status on public.hub_online_apps (status);
+
+alter table public.hub_online_apps enable row level security;
+
+drop policy if exists "hub_online_apps_open" on public.hub_online_apps;
+create policy "hub_online_apps_open" on public.hub_online_apps
+  for all to anon, authenticated using (true) with check (true);
 
 alter table public.hub_accounts enable row level security;
 alter table public.hub_friendships enable row level security;
