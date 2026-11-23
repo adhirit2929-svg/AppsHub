@@ -745,7 +745,7 @@ export async function fetchAdminDashboardData(user: User): Promise<AdminDashboar
           username: String(data.username || d.id),
           displayName: String(data.displayName || data.username || d.id),
           avatar: String(data.avatar || ''),
-          role: data.role === 'admin' ? 'admin' : 'user',
+          role: (data.role === 'admin' ? 'admin' : 'user') as 'admin' | 'user',
         };
       })
       .filter((p) => !isExcludedLegacyAccount(p.usernameKey) && !isExcludedLegacyAccount(p.username));
