@@ -5,7 +5,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: '/',
+    base: process.env.GITHUB_PAGES === 'true' ? '/AppsHub/' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
