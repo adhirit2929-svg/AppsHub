@@ -508,7 +508,7 @@ export default function App() {
     <div className="w-full h-screen overflow-hidden m-0 p-0 bg-[#f3f5f9] dark:bg-[#111522]">
       <iframe
         ref={iframeRef}
-        src="/assets/aistudio/My-Apps-Hub_f6c97383.html?v=202611180358"
+        src={`${import.meta.env.BASE_URL}assets/aistudio/My-Apps-Hub_f6c97383.html?v=202611180358`}
         title="My Apps Hub"
         className="w-full h-full border-0 block"
         allow="camera; microphone; accelerometer; gyroscope; display-capture"
