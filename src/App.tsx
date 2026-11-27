@@ -12,33 +12,39 @@ import {
 } from './supabaseSync';
 import {
   acceptFriendRequestInSupabase,
+  adminDeleteOnlineAccountInSupabase,
   addFriendByUsernameInSupabase,
   checkSupabaseTablesReady,
   deleteOnlineAccountFromSupabase,
-  fetchAccountModerationStatus,
   fetchAccountRoleFromSupabase,
   fetchAdminDirectoryFromSupabase,
   fetchChatMessagesFromSupabase,
   fetchChatsFromSupabase,
   fetchFriendshipsFromSupabase,
-  fetchOnlineAppById,
   fetchOnlineApps,
   loginOnlineAccountFromSupabase,
+  moderateOnlineApp,
   registerOnlineAccountInSupabase,
   removeFriendshipInSupabase,
+  reportOnlineApp,
+  resolveOnlineAppAppeal,
+  resolveOnlineAppReport,
   reviewOnlineApp,
   sendMessageInSupabase,
   setAccountModeration,
   setAccountRoleInSupabase,
   submitOnlineApp,
+  submitOnlineAppAppeal,
   subscribeOnlineApps,
   subscribeUserSocialRealtime,
   syncOnlineAccountToSupabase,
   syncSingleBucketToSupabase,
   updateOnlineApp,
   deleteOnlineApp,
+  type OnlineAppAppealTargetType,
+  type OnlineAppDataStorageMode,
+  type OnlineAppSourceMode,
 } from './supabaseSync';
-import type { OnlineAppDTO } from './supabaseSync';
 
 interface CloudBridgeMessage {
   type: string;
@@ -56,6 +62,7 @@ export default function App() {
   const activeChatIdRef = useRef<string | null>(null);
   const tablesReadyRef = useRef<boolean>(false);
   const unsubRealtimeRef = useRef<(() => void) | null>(null);
+  const unsubOnlineAppsRef = useRef<(() => void) | null>(null);
   const pollTimerRef = useRef<number | null>(null);
 
   const postToHub = (msg: Record<string, unknown>) => {
@@ -71,6 +78,32 @@ export default function App() {
     if (pollTimerRef.current !== null) {
       window.clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
+    }
+  };
+
+  const refreshOnlineApps = async () => {
+    try {
+      const res = await fetchOnlineApps();
+      if (res.ok) {
+        postToHub({
+          type: 'MYAPPS_FB_ONLINE_APPS',
+          apps: res.apps,
+        });
+      }
+    } catch {
+      // Non-fatal if hub_online_apps table isn't created yet
+    }
+  };
+
+  const ensureOnlineAppsSubscribed = async () => {
+    await refreshOnlineApps();
+    if (!unsubOnlineAppsRef.current) {
+      unsubOnlineAppsRef.current = subscribeOnlineApps((apps) => {
+        postToHub({
+          type: 'MYAPPS_FB_ONLINE_APPS',
+          apps,
+        });
+      });
     }
   };
 
@@ -145,14 +178,21 @@ export default function App() {
       isBootstrappedAdmin: false,
       ...(status.error ? { error: status.error } : {}),
     });
-    if (status.tablesReady && myKey) {
-      await attachSocialForKey(myKey);
+    if (status.tablesReady) {
+      void ensureOnlineAppsSubscribed();
+      if (myKey) {
+        await attachSocialForKey(myKey);
+      }
     }
   };
 
   useEffect(() => {
     void broadcastSupabaseStatus();
-    return () => clearRealtime();
+    return () => {
+      clearRealtime();
+      unsubOnlineAppsRef.current?.();
+      unsubOnlineAppsRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -206,6 +246,7 @@ export default function App() {
           isBootstrappedAdmin: false,
         });
         if (status.tablesReady) {
+          void ensureOnlineAppsSubscribed();
           await attachSocialForKey(myKey);
         }
         return;
@@ -492,6 +533,370 @@ export default function App() {
         } catch (err) {
           postToHub({
             type: 'MYAPPS_FB_ADMIN_ACTION_RESULT',
+            ok: false,
+            error: formatReadableError(err),
+          });
+        }
+        return;
+      }
+
+      if (data.type === 'MYAPPS_FB_ADMIN_MODERATE_ACCOUNT' && data.payload) {
+        try {
+          const callerKey = activeKeyRef.current || '';
+          const usernameKey = String(data.payload.usernameKey || data.payload.username || '');
+          const moderationStatus =
+            data.payload.moderationStatus === 'banned'
+              ? 'banned'
+              : data.payload.moderationStatus === 'suspended'
+              ? 'suspended'
+              : 'active';
+          const banMessage = String(data.payload.banMessage || '');
+          const suspendedUntilMs = Number(data.payload.suspendedUntilMs || 0);
+          const result = await setAccountModeration(
+            callerKey,
+            usernameKey,
+            moderationStatus,
+            banMessage,
+            suspendedUntilMs
+          );
+          postToHub({
+            type: 'MYAPPS_FB_ADMIN_ACTION_RESULT',
+            ok: true,
+            action: 'moderate',
+            targetUsername: result.targetUsername,
+            moderationStatus: result.moderationStatus,
+            dashboard: { isAdmin: true, accounts: result.accounts },
+          });
+        } catch (err) {
+          postToHub({
+            type: 'MYAPPS_FB_ADMIN_ACTION_RESULT',
+            ok: false,
+            error: formatReadableError(err),
+          });
+        }
+        return;
+      }
+
+      if (data.type === 'MYAPPS_FB_ADMIN_DELETE_ACCOUNT' && data.payload) {
+        try {
+          const callerKey = activeKeyRef.current || '';
+          const targetUsername = String(data.payload.username || '');
+          const targetKey = String(data.payload.usernameKey || data.payload.username || '');
+          const accounts = await adminDeleteOnlineAccountInSupabase(callerKey, targetKey);
+          postToHub({
+            type: 'MYAPPS_FB_ADMIN_ACTION_RESULT',
+            ok: true,
+            action: 'delete',
+            targetUsername,
+            deletedUsernameKey: toSafeAccountKey(targetKey),
+            dashboard: { isAdmin: true, accounts },
+          });
+        } catch (err) {
+          postToHub({
+            type: 'MYAPPS_FB_ADMIN_ACTION_RESULT',
+            ok: false,
+            error: formatReadableError(err),
+          });
+        }
+        return;
+      }
+
+      if (data.type === 'MYAPPS_FB_ONLINE_APP_SUBMIT' && data.payload) {
+        try {
+          const account = data.payload.account as HubAccountMeta;
+          const appInput = (data.payload.app || {}) as Record<string, unknown>;
+          const res = await submitOnlineApp(account, {
+            name: String(appInput.name || ''),
+            description: String(appInput.description || ''),
+            about: String(appInput.about || ''),
+            icon: String(appInput.icon || '🌐'),
+            sourceMode: (appInput.sourceMode as OnlineAppSourceMode) || 'html',
+            appUrl: String(appInput.appUrl || ''),
+            dataStorageMode: (appInput.dataStorageMode as OnlineAppDataStorageMode) || 'self',
+            code: String(appInput.code || ''),
+            htmlCode: String(appInput.htmlCode || ''),
+            cssCode: String(appInput.cssCode || ''),
+            jsCode: String(appInput.jsCode || ''),
+          });
+          if (res.ok) await refreshOnlineApps();
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'submit',
+            ...res,
+          });
+        } catch (err) {
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'submit',
+            ok: false,
+            error: formatReadableError(err),
+          });
+        }
+        return;
+      }
+
+      if (data.type === 'MYAPPS_FB_ONLINE_APP_UPDATE' && data.payload) {
+        try {
+          const account = data.payload.account as HubAccountMeta;
+          const appId = String(data.payload.appId || '');
+          const appInput = (data.payload.app || {}) as Record<string, unknown>;
+          const res = await updateOnlineApp(account, {
+            appId,
+            name: String(appInput.name || ''),
+            description: String(appInput.description || ''),
+            about: String(appInput.about || ''),
+            icon: String(appInput.icon || '🌐'),
+            sourceMode: (appInput.sourceMode as OnlineAppSourceMode) || 'html',
+            appUrl: String(appInput.appUrl || ''),
+            dataStorageMode: (appInput.dataStorageMode as OnlineAppDataStorageMode) || 'self',
+            code: String(appInput.code || ''),
+            htmlCode: String(appInput.htmlCode || ''),
+            cssCode: String(appInput.cssCode || ''),
+            jsCode: String(appInput.jsCode || ''),
+          });
+          if (res.ok) await refreshOnlineApps();
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'update',
+            ...res,
+          });
+        } catch (err) {
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'update',
+            ok: false,
+            error: formatReadableError(err),
+          });
+        }
+        return;
+      }
+
+      if (data.type === 'MYAPPS_FB_ONLINE_APP_REVIEW' && data.payload) {
+        try {
+          const callerKey = activeKeyRef.current || '';
+          const appId = String(data.payload.appId || '');
+          const actionRaw = String(data.payload.action || 'approve');
+          const reviewAction =
+            actionRaw === 'reject' || actionRaw === 'disable' || actionRaw === 'enable' || actionRaw === 'remove'
+              ? actionRaw
+              : 'approve';
+          const adminNote = String(data.payload.adminNote || '');
+          const res = await reviewOnlineApp(callerKey, {
+            appId,
+            action: reviewAction,
+            adminNote,
+          });
+          if (res.ok) await refreshOnlineApps();
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'review',
+            reviewAction,
+            ...res,
+          });
+        } catch (err) {
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'review',
+            ok: false,
+            error: formatReadableError(err),
+          });
+        }
+        return;
+      }
+
+      if (data.type === 'MYAPPS_FB_ONLINE_APP_REPORT' && data.payload) {
+        try {
+          const account = data.payload.account as HubAccountMeta;
+          const appId = String(data.payload.appId || '');
+          const reason = String(data.payload.reason || '');
+          const details = String(data.payload.details || '');
+          const res = await reportOnlineApp(account, {
+            appId,
+            reason,
+            details,
+          });
+          if (res.ok) await refreshOnlineApps();
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'report',
+            ...res,
+          });
+        } catch (err) {
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'report',
+            ok: false,
+            error: formatReadableError(err),
+          });
+        }
+        return;
+      }
+
+      if (data.type === 'MYAPPS_FB_ONLINE_APP_REPORT_RESOLVE' && data.payload) {
+        try {
+          const callerKey = activeKeyRef.current || '';
+          const appId = String(data.payload.appId || '');
+          const reportId = data.payload.reportId ? String(data.payload.reportId) : undefined;
+          const decision = data.payload.decision === 'remove_app' ? 'remove_app' : 'dismiss';
+          const adminNote = String(data.payload.adminNote || '');
+          const res = await resolveOnlineAppReport(callerKey, {
+            appId,
+            reportId,
+            decision,
+            adminNote,
+          });
+          if (res.ok) await refreshOnlineApps();
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'report_resolve',
+            decision,
+            ...res,
+          });
+        } catch (err) {
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'report_resolve',
+            ok: false,
+            error: formatReadableError(err),
+          });
+        }
+        return;
+      }
+
+      if (data.type === 'MYAPPS_FB_ONLINE_APP_MODERATE' && data.payload) {
+        try {
+          const callerKey = activeKeyRef.current || '';
+          const appId = String(data.payload.appId || '');
+          const actRaw = String(data.payload.action || 'warn');
+          const modAction: 'warn' | 'suspend' | 'ban' | 'clear' =
+            actRaw === 'suspend' || actRaw === 'ban' || actRaw === 'clear' ? actRaw : 'warn';
+          const reason = String(data.payload.reason || '');
+          const suspendedUntilMs = Number(data.payload.suspendedUntilMs || 0);
+          const res = await moderateOnlineApp(callerKey, {
+            appId,
+            action: modAction,
+            reason,
+            suspendedUntilMs,
+          });
+          if (res.ok) await refreshOnlineApps();
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'moderate',
+            ...res,
+          });
+        } catch (err) {
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'moderate',
+            ok: false,
+            error: formatReadableError(err),
+          });
+        }
+        return;
+      }
+
+      if (data.type === 'MYAPPS_FB_ONLINE_APP_APPEAL' && data.payload) {
+        try {
+          const account = data.payload.account as HubAccountMeta;
+          const appId = String(data.payload.appId || '');
+          const tRaw = String(data.payload.targetType || 'ban');
+          const targetType: OnlineAppAppealTargetType =
+            tRaw === 'warning' || tRaw === 'suspension' ? tRaw : 'ban';
+          const message = String(data.payload.message || '');
+          const res = await submitOnlineAppAppeal(account, {
+            appId,
+            targetType,
+            message,
+          });
+          if (res.ok) await refreshOnlineApps();
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'appeal',
+            ...res,
+          });
+        } catch (err) {
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'appeal',
+            ok: false,
+            error: formatReadableError(err),
+          });
+        }
+        return;
+      }
+
+      if (data.type === 'MYAPPS_FB_ONLINE_APP_APPEAL_RESOLVE' && data.payload) {
+        try {
+          const callerKey = activeKeyRef.current || '';
+          const appId = String(data.payload.appId || '');
+          const appealId = String(data.payload.appealId || '');
+          const dRaw = String(data.payload.decision || 'deny');
+          const decision: 'accept' | 'deny' | 'request_convo' =
+            dRaw === 'accept' || dRaw === 'request_convo' ? dRaw : 'deny';
+          const adminResponse = String(data.payload.adminResponse || '');
+          const adminAccount = data.payload.adminAccount as HubAccountMeta | undefined;
+          const res = await resolveOnlineAppAppeal(callerKey, {
+            appId,
+            appealId,
+            decision,
+            adminResponse,
+            adminAccount,
+          });
+          if (res.ok) {
+            await refreshOnlineApps();
+            if (decision === 'request_convo' && activeKeyRef.current) {
+              await refreshSocialState(activeKeyRef.current);
+            }
+          }
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'appeal_resolve',
+            ...res,
+          });
+        } catch (err) {
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'appeal_resolve',
+            ok: false,
+            error: formatReadableError(err),
+          });
+        }
+        return;
+      }
+
+      if (data.type === 'MYAPPS_FB_ONLINE_APP_DELETE' && data.payload) {
+        try {
+          const account = (data.payload.account as HubAccountMeta | undefined) || (activeKeyRef.current || '');
+          const appId = String(data.payload.appId || '');
+          const res = await deleteOnlineApp(account, appId);
+          if (res.ok) await refreshOnlineApps();
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'delete',
+            ...res,
+          });
+        } catch (err) {
+          postToHub({
+            type: 'MYAPPS_FB_ONLINE_APP_RESULT',
+            requestId: data.requestId || null,
+            action: 'delete',
             ok: false,
             error: formatReadableError(err),
           });

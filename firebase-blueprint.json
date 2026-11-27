@@ -120,7 +120,7 @@
     },
     "OnlineDataBucket": {
       "title": "OnlineDataBucket",
-      "description": "Structured per-feature data bucket (customApps, notes, stocks, meditation, shortcuts, appPrivacy, calculator, nutritrack) for an OnlineHubAccount.",
+      "description": "Structured per-feature data bucket (customApps, notes, stocks, meditation, shortcuts, appPrivacy, calculator, nutritrack, agentChats, agentMemories) for an OnlineHubAccount.",
       "type": "object",
       "properties": {
         "ownerId": {
@@ -137,7 +137,7 @@
         },
         "bucketName": {
           "type": "string",
-          "enum": ["customApps", "notes", "stocks", "meditation", "shortcuts", "appPrivacy", "calculator", "nutritrack"]
+          "enum": ["customApps", "notes", "stocks", "meditation", "shortcuts", "appPrivacy", "calculator", "nutritrack", "agentChats", "agentMemories"]
         },
         "items": {
           "type": "array",
@@ -264,6 +264,27 @@
         "role": {
           "type": "string",
           "enum": ["user", "admin"]
+        },
+        "moderationStatus": {
+          "type": "string",
+          "enum": ["active", "suspended", "banned"],
+          "description": "Account moderation status managed by admins."
+        },
+        "banMessage": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Optional reason or ban/suspension message displayed to the user."
+        },
+        "suspendedUntilMs": {
+          "type": "number",
+          "description": "UTC epoch milliseconds when a temporary suspension expires (0 if not suspended)."
+        },
+        "moderatedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase UID of the admin who last updated moderation status."
         },
         "createdAt": {
           "type": "string",
@@ -434,6 +455,106 @@
         }
       },
       "required": ["message", "updatedBy", "active", "createdAt", "updatedAt"]
+    },
+    "OnlineApp": {
+      "title": "OnlineApp",
+      "description": "User-submitted and admin-moderated web app published to the Online Apps store.",
+      "type": "object",
+      "properties": {
+        "appId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "icon": {
+          "type": "string",
+          "maxLength": 16
+        },
+        "authorUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorUsername": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "authorUsernameKey": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorDisplayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "sourceMode": {
+          "type": "string",
+          "enum": ["html", "bundle"]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 180000
+        },
+        "htmlCode": {
+          "type": "string",
+          "maxLength": 120000
+        },
+        "cssCode": {
+          "type": "string",
+          "maxLength": 120000
+        },
+        "jsCode": {
+          "type": "string",
+          "maxLength": 120000
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected", "disabled"]
+        },
+        "version": {
+          "type": "number"
+        },
+        "adminNote": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "reviewedByUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "hasPendingUpdate": {
+          "type": "boolean"
+        },
+        "pendingUpdate": {
+          "type": "object",
+          "description": "Staged author update waiting for admin approval."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["appId", "name", "authorUid", "authorUsername", "authorUsernameKey", "authorDisplayName", "sourceMode", "code", "status", "version", "hasPendingUpdate", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -451,7 +572,7 @@
     },
     "/users/{userId}/hubAccounts/{accountKey}/buckets/{bucketName}": {
       "schema": { "$ref": "#/entities/OnlineDataBucket" },
-      "description": "Synced data buckets (customApps, notes, stocks, meditation, shortcuts, appPrivacy, calculator, nutritrack) per online account."
+      "description": "Synced data buckets (customApps, notes, stocks, meditation, shortcuts, appPrivacy, calculator, nutritrack, agentChats, agentMemories) per online account."
     },
     "/admins/{adminUid}": {
       "schema": { "$ref": "#/entities/AdminRecord" },
@@ -480,6 +601,10 @@
     "/systemConfig/{docId}": {
       "schema": { "$ref": "#/entities/SystemAnnouncement" },
       "description": "Admin-managed system announcement configuration."
+    },
+    "/onlineApps/{appId}": {
+      "schema": { "$ref": "#/entities/OnlineApp" },
+      "description": "Community-submitted HTML/CSS/JS apps with admin approval and staged update review."
     }
   }
 }

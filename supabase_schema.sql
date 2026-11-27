@@ -46,12 +46,15 @@ create table if not exists public.hub_online_apps (
   app_id text primary key,
   name text not null,
   description text not null default '',
+  about text not null default '',
   icon text not null default '',
   author_uid text not null,
   author_username text not null default '',
   author_username_key text not null default '',
   author_display_name text not null default '',
-  source_mode text not null default 'html' check (source_mode in ('html', 'bundle')),
+  source_mode text not null default 'html' check (source_mode in ('html', 'bundle', 'link')),
+  app_url text not null default '',
+  data_storage_mode text not null default 'self' check (data_storage_mode in ('self', 'hub_supabase')),
   code text not null default '',
   html_code text not null default '',
   css_code text not null default '',
@@ -65,6 +68,17 @@ create table if not exists public.hub_online_apps (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.hub_online_apps
+  add column if not exists about text not null default '',
+  add column if not exists app_url text not null default '',
+  add column if not exists data_storage_mode text not null default 'self';
+
+do $$
+begin
+  alter table public.hub_online_apps drop constraint if exists hub_online_apps_source_mode_check;
+  alter table public.hub_online_apps add constraint hub_online_apps_source_mode_check check (source_mode in ('html', 'bundle', 'link'));
+exception when others then null; end $$;
 
 create index if not exists idx_hub_online_apps_author on public.hub_online_apps (author_uid);
 create index if not exists idx_hub_online_apps_status on public.hub_online_apps (status);

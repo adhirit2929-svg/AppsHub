@@ -1,0 +1,6 @@
+{
+  "name": "My Apps Hub",
+  "description": "Personal productivity and lifestyle suite featuring NutriTrack, Fitness Corner, Calculator, AES Encrypted Notes, and custom tools.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
